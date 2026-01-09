@@ -1,222 +1,358 @@
-import { Context, h, Schema } from 'koishi'
-import { } from 'koishi-plugin-puppeteer'
-import { JSONPath } from 'jsonpath-plus'
-import sharp from 'sharp'
+var __create = Object.create;
+var __defProp = Object.defineProperty;
+var __getOwnPropDesc = Object.getOwnPropertyDescriptor;
+var __getOwnPropNames = Object.getOwnPropertyNames;
+var __getProtoOf = Object.getPrototypeOf;
+var __hasOwnProp = Object.prototype.hasOwnProperty;
+var __name = (target, value) => __defProp(target, "name", { value, configurable: true });
+var __commonJS = (cb, mod) => function __require() {
+  return mod || (0, cb[__getOwnPropNames(cb)[0]])((mod = { exports: {} }).exports, mod), mod.exports;
+};
+var __export = (target, all) => {
+  for (var name2 in all)
+    __defProp(target, name2, { get: all[name2], enumerable: true });
+};
+var __copyProps = (to, from, except, desc) => {
+  if (from && typeof from === "object" || typeof from === "function") {
+    for (let key of __getOwnPropNames(from))
+      if (!__hasOwnProp.call(to, key) && key !== except)
+        __defProp(to, key, { get: () => from[key], enumerable: !(desc = __getOwnPropDesc(from, key)) || desc.enumerable });
+  }
+  return to;
+};
+var __toESM = (mod, isNodeMode, target) => (target = mod != null ? __create(__getProtoOf(mod)) : {}, __copyProps(
+  // If the importer is in node compatibility mode or this is not an ESM
+  // file that has been converted to a CommonJS file using a Babel-
+  // compatible transform (i.e. "__esModule" has not been set), then set
+  // "default" to the CommonJS "module.exports" for node compatibility.
+  isNodeMode || !mod || !mod.__esModule ? __defProp(target, "default", { value: mod, enumerable: true }) : target,
+  mod
+));
+var __toCommonJS = (mod) => __copyProps(__defProp({}, "__esModule", { value: true }), mod);
 
-export const usage = `
-- **指令：p-setu [tag]**\n
-    别名：涩图，色图\n
-    目前只能用一个tag，未来会更新多tag
-- **指令：p-return [target]**\n
-    别名：退款\n
-    给上一个或指定的用户退款（例如图没发出来）需要管理员权限\n
-- **为什么需要puppeteer:**\n
-    原装的涩图总是被tx吞，经过一次渲染后加了1px的彩色边框，妈妈再也不怕我的图发不出来啦`;
-export const name = 'setu'
+// src/locales/zh-CN.yml
+var require_zh_CN = __commonJS({
+  "src/locales/zh-CN.yml"(exports, module2) {
+    module2.exports = {
+      adminUsers: { $description: "管理员用户" },
+      outputLogs: { $description: "是否将用户的签到操作打印在日志里" },
+      price: { $description: "一张涩图的价格" },
+      punishment: { $description: "冒充管理员的惩罚" },
+      blockingWord: { $description: "屏蔽词" },
+      commands: {
+        "p-setu": {
+          description: "获取一张涩图，支持多个标签（空格分隔）",
+          messages: {
+            "account-notExists": "君现在还没有p点，请先签到哦",
+            "no-enough-p1": "那个......",
+            "no-enough-p2": "君的p点不够力...先签到再来吧qwq",
+            "please-wait": "稍等哦...上一个图片还没处理完",
+            "blocked-tag": "不可以看包含 {0} 的涩图！",
+            "r18-warning": "听不懂你在说什么呢，一定是冲多了吧",
+            "r18-on": "就这么喜欢涩涩？真是无药可救的杂鱼",
+            "r18-off": "终于知道收敛一点了？",
+            "r18-mix": "知道了知道了，真没办法",
+            "r18-error": "哎呀，出现了奇怪的错误",
+            "r18-no-assignment": "杂鱼，你不配命令我哦",
+            "no-img-for-tag": "没有你要的标签 [{0}] 呢，可能是xp太怪了吧...",
+            "img-not-valid": "哎呀，找不到这张图了...P点已自动退回~", 
+            "ai-filter-blocked": "哎呀，带这些标签都是AI图呢...P点已自动退回~", 
+            "ai-only-blocked": "你就这么喜欢AI作品嘛！找不到的说...P点已自动退回~", 
+            "pay-price": "已扣除{0}p点！现在君还有{1}p点！"
+          },
+          options: { 
+            r18: "t开启，f关闭，m混合", 
+            exai: "排除AI作品 (excludeAI=true)", 
+            ai: "搜索AI作品 (excludeAI=false)",
+            uid: "指定作者UID" 
+          }
+        },
+        "p-return": {
+          description: "退款",
+          usage: "使用方法：“退款 @对方”，在旧版QQ需要将@元素改为qq号,需要配置管理员",
+          messages: {
+            "no-id": "退款失败，请尝试将@元素改为qq号！",
+            "return-p": "已退款{0}p点！现在<at id={1}/>还有{2}p点！",
+            punishment1: "<at id={0}/>冒充恋恋，扣你{1}p点！",
+            punishment2: "<at id={0}/>冒充恋恋，扣光你p点！"
+          }
+        }
+      }
+    };
+  }
+});
 
-export interface Config {
-  adminUsers: string[]
-  enableTags: boolean
-  blockingWord: string[]
-  price: number
-  punishment: number
-  outputLogs: boolean
-}
+// src/index.ts
+var src_exports = {};
+__export(src_exports, {
+  Config: () => Config,
+  apply: () => apply,
+  inject: () => inject,
+  name: () => name,
+  usage: () => usage
+});
+module.exports = __toCommonJS(src_exports);
+var import_koishi = require("koishi");
+var import_jsonpath_plus = require("jsonpath-plus");
+var import_sharp = __toESM(require("sharp"));
+var usage = `
+- **指令：p-setu [tag...]**
 
-export const inject = {
-  required: ['database', 'puppeteer'],
-  optional: [],
-}
+    别名：涩图，色图
 
-export const Config: Schema<Config> = Schema.object({
-  adminUsers: Schema.array(Schema.string()),
-  enableTags: Schema.boolean().default(true).description('显示tag'),
-  blockingWord: Schema.array(Schema.string()),
-  price: Schema.number().default(500),
-  punishment: Schema.number().default(250),
-  outputLogs: Schema.boolean().default(true),
+    支持多个标签，请使用空格分隔。例如：\`涩图 猫耳 女仆\`
+    参数：
+    -e, --exai   排除AI作品 (excludeAI=true)
+    -a, --ai     搜索AI作品 (excludeAI=false)
+    -u, --uid    指定画师UID
+    -r           指定R18模式 (t/f/m)
+
+    *不加 -e 或 -a 时，默认同时搜索AI和非AI作品*
+
+- **指令：p-return [target]**
+
+    别名：退款
+
+    给上一个或指定的用户退款（例如图没发出来）需要管理员权限`;
+var name = "setu";
+var inject = {
+  required: ["database", "puppeteer"],
+  optional: []
+};
+var Config = import_koishi.Schema.object({
+  adminUsers: import_koishi.Schema.array(import_koishi.Schema.string()),
+  enableTags: import_koishi.Schema.boolean().default(true).description("显示tag"),
+  blockingWord: import_koishi.Schema.array(import_koishi.Schema.string()),
+  price: import_koishi.Schema.number().default(500),
+  punishment: import_koishi.Schema.number().default(250),
+  outputLogs: import_koishi.Schema.boolean().default(true)
 }).i18n({
-  'zh-CN': require('./locales/zh-CN'),
-})
+  "zh-CN": require_zh_CN()
+});
 
-async function isValidImageUrl(url: string | URL | Request) {
+async function isValidImageUrl(ctx, url) {
   try {
-    const response = await fetch(url, { method: 'HEAD' });
-    return response.ok;
+    if (typeof fetch === "function") {
+      const response = await fetch(url, { method: "HEAD" });
+      if (response && typeof response.ok === "boolean")
+        return response.ok;
+    }
+    await ctx.http.get(url, { responseType: "arraybuffer", headers: { Range: "bytes=0-0" } });
+    return true;
   } catch (error) {
     return false;
   }
 }
+__name(isValidImageUrl, "isValidImageUrl");
 
-async function isTargetIdExists(ctx: Context, USERID: string) {
-  //检查数据表中是否有指定id者
-  const targetInfo = await ctx.database.get('p_system', { userid: USERID });
+async function isTargetIdExists(ctx, USERID) {
+  const targetInfo = await ctx.database.get("p_system", { userid: USERID });
   return targetInfo.length == 0;
 }
-declare module 'koishi' {
-  interface Tables { p_system: p_system }
-  interface Tables { p_setu: p_setu }
-}
-export interface p_system {
-  id: number
-  userid: string
-  p: number
-}
+__name(isTargetIdExists, "isTargetIdExists");
 
-export interface p_setu {
-  id: number
-  channelid: string
-  r18: number
-  src: string
-  stage: string
-  same_user_time: number
-}
+async function apply(ctx, cfg) {
+  ctx.model.extend("p_system", {
+    id: "unsigned",
+    userid: "string",
+    p: "integer"
+  }, { autoInc: true });
+  ctx.model.extend("p_setu", {
+    id: "unsigned",
+    channelid: "string",
+    r18: "integer",
+    src: "string",
+    stage: "string",
+    same_user_time: "integer"
+  }, { autoInc: true });
 
-export async function apply(ctx: Context, cfg: Config) {
-  ctx.model.extend('p_system', {
-    id: 'unsigned',
-    userid: 'string',
-    p: 'integer'
-  }, { autoInc: true })
+  const logger = ctx.logger("p-setu");
+  ctx.i18n.define("zh-CN", require_zh_CN());
 
-  ctx.model.extend('p_setu', {
-    id: 'unsigned',
-    channelid: 'string',
-    r18: 'integer',
-    src: 'string',
-    stage: 'string',
-    same_user_time: 'integer'
-  }, { autoInc: true })
+  ctx.command("p/p-setu [...tags]")
+    .alias("涩图", "色图")
+    .option("r18", "-r <mode:string>")
+    .alias("setu")
+    .option("exai", "-e") // 排除AI
+    .option("ai", "-a")   // 允许AI (excludeAI=false)
+    .option("uid", "-u <uid:string>")
+    .action(async ({ session, options }, ...tags) => {
+    const USERID = session.userId;
+    const CHANNELID = session.channelId;
+    const notExists = await isTargetIdExists(ctx, USERID);
+    
+    if (notExists) return session.text(".account-notExists");
 
-  const logger = ctx.logger("p-setu")
-  ctx.i18n.define('zh-CN', require('./locales/zh-CN'))
+    const usersdata = await ctx.database.get("p_system", { userid: USERID });
+    const saving = usersdata[0].p;
+    if (saving < cfg.price) {
+      await session.sendQueued((0, import_koishi.h)("at", { id: USERID }) + session.text(".no-enough-p1"));
+      await session.sendQueued(session.text(".no-enough-p2"));
+      return null;
+    }
 
-  ctx.command('p/p-setu [tag:string]').alias('涩图', '色图')
-    .option('r18', '-r <mode:string>')
-    .action(async ({ session, options }: any, tag) => {
-      const USERID = session.userId;//发送者的用户id
-      const CHANNELID = session.channelId;
-      const notExists = await isTargetIdExists(ctx, USERID); //该群中的该用户是否签到过
-      if (notExists) return session.text('.account-notExists');
-      const usersdata = await ctx.database.get('p_system', { userid: USERID });
-      const saving = usersdata[0].p;
-      if (saving < cfg.price) {
-        await session.sendQueued(h('at', { id: USERID }) + session.text('.no-enough-p1'));
-        await session.sendQueued(session.text('.no-enough-p2'));
-        return null;
-      };
-      const targetInfo = await ctx.database.get('p_setu', { channelid: CHANNELID }); //该群是否请求过
-      if (targetInfo.length == 0) {
-        await ctx.database.create('p_setu', { channelid: CHANNELID, stage: 'over', r18: 0 })
-        if (cfg.outputLogs) logger.success(CHANNELID + '初始化完成');
-      }
-      if ((await ctx.database.get('p_setu', { channelid: CHANNELID }))[0]?.stage == 'ing') {
-        await session.send(String(h('at', { id: USERID })) + session.text('.please-wait'));
-        await ctx.sleep(60000);
-        await ctx.database.set('p_setu', { channelid: CHANNELID }, { stage: 'over' });
-        return null;
-      }
-      const r18_config = (await ctx.database.get('p_setu', { channelid: CHANNELID }))[0]?.r18;
-      if (cfg.blockingWord.includes(tag)) return session.text('.blocked-tag', [tag]);
-      if (options.r18) {
-        if (cfg.adminUsers.includes(USERID)) {
-          if (options.r18 == 'f') await ctx.database.set('p_setu', { channelid: CHANNELID }, { r18: 0 })
-          else if (options.r18 == 't') await ctx.database.set('p_setu', { channelid: CHANNELID }, { r18: 1 })
-          else if (options.r18 == 'm') await ctx.database.set('p_setu', { channelid: CHANNELID }, { r18: 2 })
-          else return session.text('.r18-wraning');
+    const targetInfo = await ctx.database.get("p_setu", { channelid: CHANNELID });
+    if (targetInfo.length == 0) {
+      await ctx.database.create("p_setu", { channelid: CHANNELID, stage: "over", r18: 0 });
+      if (cfg.outputLogs) logger.success(CHANNELID + "初始化完成");
+    }
 
-          if ((await ctx.database.get('p_setu', { channelid: CHANNELID }))[0]?.r18 == 0) return session.text('.r18-off');
-          else if ((await ctx.database.get('p_setu', { channelid: CHANNELID }))[0]?.r18 == 1) return session.text('.r18-on');
-          else if ((await ctx.database.get('p_setu', { channelid: CHANNELID }))[0]?.r18 == 2) return session.text('.r18-mix');
-          else return session.text('.r18-error');
-        }
-        else return session.text('.r18-no-assignment');
-      }
+    if ((await ctx.database.get("p_setu", { channelid: CHANNELID }))[0]?.stage == "ing") {
+      await session.send(String((0, import_koishi.h)("at", { id: USERID })) + session.text(".please-wait"));
+      await ctx.sleep(6e4);
+      await ctx.database.set("p_setu", { channelid: CHANNELID }, { stage: "over" });
+      return null;
+    }
 
-      let url = 'https://api.lolicon.app/setu/v2?size=regular&r18=' + r18_config;
-      if (tag != null) url = url + '&tag=' + String(tag);
+    const r18_config = (await ctx.database.get("p_setu", { channelid: CHANNELID }))[0]?.r18;
 
-      if (cfg.outputLogs) logger.info(url);
-      const JSON = await ctx.http.get(url, { responseType: "json" });
-      const data = JSONPath({ path: "$.data.0", json: JSON });
-      if (data.length === 0)
-        await session.send(session.text('.no-img-for-tag', [tag]));
-      else {
-        const imageUrl = await JSONPath({ path: "$.data.0.urls.regular", json: JSON });
-        const isValid = await isValidImageUrl(imageUrl);
-        await ctx.database.set('p_setu', { channelid: CHANNELID }, { src: USERID })
-        let info = `作品名：${await JSONPath({ path: "$.data.0.title", json: JSON })}\n`
-        if(cfg.enableTags) info += `标签：${await JSONPath({ path: "$.data.0.tags", json: JSON })}\n`
-        info += `作者：${await JSONPath({ path: "$.data.0.author", json: JSON })}\n`
-        info += `UID：${await JSONPath({ path: "$.data.0.uid", json: JSON })}\n`
-        info += `r18：${await JSONPath({ path: "$.data.0.r18", json: JSON })}\n`
-        info += `PID：${await JSONPath({ path: "$.data.0.pid", json: JSON })}\n`;
-        await session.send(info);
+    if (tags.length > 0) {
+      const blocked = tags.find(t => cfg.blockingWord.includes(t));
+      if (blocked) return session.text(".blocked-tag", [blocked]);
+    }
 
-        if (isValid) {
-          if (cfg.outputLogs) logger.success('图片已成功获取');
-        } else {
-          if (cfg.outputLogs) logger.info('图片链接无效');
-          return session.text('.img-not-valid');
-        }
-
-        await ctx.database.set('p_setu', { channelid: CHANNELID }, { stage: 'ing' })
-        const rest = usersdata[0]?.p - cfg.price;
-        await ctx.database.set('p_system', { userid: USERID }, { p: rest })
-        const imageBuffer = await ctx.http.get(imageUrl, { responseType: 'arraybuffer' });
-        const getRandomColorValue = () => Math.floor(Math.random() * 256);
-        const imageWithBorder = await sharp(imageBuffer).extend({
-          top: 1,
-          bottom: 1,
-          left: 1,
-          right: 1,
-          background: {
-            r: getRandomColorValue(),
-            g: getRandomColorValue(),
-            b: getRandomColorValue(),
-            alpha: 1
-          }
-        }).toBuffer();
-        const imageBase64 = imageWithBorder.toString('base64')
-        const image = `data:image/png;base64,${imageBase64}`
-
-        await session.sendQueued([h('at', { id: USERID }), session.text('.pay-price', [cfg.price, rest]), h('img', { src: image })].join(''));
-        if (cfg.outputLogs) logger.success('图片发送成功');
-        await ctx.database.set('p_setu', { channelid: CHANNELID }, { stage: 'over' })
-      }
-    });
-
-  ctx.command('p/p-return [target]').alias("退款", "姐姐，图没啦！").action(async ({ session }, target) => {
-    {
-      const USERID = session.userId;//发送者的用户id
-      const CHANNELID = session.channelId;
-      let targetid = (await ctx.database.get('p_setu', { channelid: CHANNELID }))[0]?.src;
-      if (target != null) {
-        let text = session.elements.filter((element) => element.type == 'at');
-        let regex = /\b([1-9]\d{6,})\b/;
-        let match = regex.exec(String(target));
-        if (!(text.length === 0) || !match) {
-          if (!match) return session.text('.no-id');
-          targetid = String(text.map(element => element.attrs.id)); // 提取 @ 元素的 id
-        }
-      }
-      if (cfg.outputLogs) logger.success(targetid + '申请退款');
-      const targetdata = await ctx.database.get('p_system', { userid: targetid });
+    if (options.r18) {
       if (cfg.adminUsers.includes(USERID)) {
-        await ctx.database.set('p_system', { userid: targetid }, { p: targetdata[0]?.p + cfg.price })
-        if (cfg.outputLogs) logger.success(targetid + '退款成功');
-        return session.text('.return-p', [cfg.price, targetid, targetdata[0]?.p + cfg.price]);
+        if (options.r18 == "f") await ctx.database.set("p_setu", { channelid: CHANNELID }, { r18: 0 });
+        else if (options.r18 == "t") await ctx.database.set("p_setu", { channelid: CHANNELID }, { r18: 1 });
+        else if (options.r18 == "m") await ctx.database.set("p_setu", { channelid: CHANNELID }, { r18: 2 });
+        else return session.text(".r18-warning");
+
+        const currentR18 = (await ctx.database.get("p_setu", { channelid: CHANNELID }))[0]?.r18;
+        if (currentR18 == 0) return session.text(".r18-off");
+        else if (currentR18 == 1) return session.text(".r18-on");
+        else if (currentR18 == 2) return session.text(".r18-mix");
+        else return session.text(".r18-error");
       } else {
-        const usersdata = await ctx.database.get('p_system', { userid: USERID });
-        if (cfg.outputLogs) logger.success(targetid + '退款惩罚');
-        if (usersdata[0]?.p >= cfg.punishment) {
-          await ctx.database.set('p_system', { userid: USERID }, { p: usersdata[0]?.p - cfg.punishment })
-          return session.text('.punishment1', [USERID, cfg.punishment]);
-        } else {
-          await ctx.database.set('p_system', { userid: USERID }, { p: 0 })
-          return session.text('.punishment2', [USERID]);
-        }
+        return session.text(".r18-no-assignment");
+      }
+    }
+
+    // AI 参数控制逻辑
+    let url = "https://api.lolicon.app/setu/v2?size=regular&r18=" + r18_config;
+
+    if (options.exai) {
+        url += "&excludeAI=true";
+    } else if (options.ai) {
+        url += "&excludeAI=false";
+    }
+    
+    if (tags.length > 0) {
+      const tagQuery = tags.map(t => `tag=${encodeURIComponent(t)}`).join('&');
+      url += `&${tagQuery}`;
+    }
+
+    if (options.uid) {
+      url += `&uid=${encodeURIComponent(options.uid)}`;
+    }
+
+    if (cfg.outputLogs) logger.info(url);
+
+    const JSON = await ctx.http.get(url, { responseType: "json" });
+    const data = (0, import_jsonpath_plus.JSONPath)({ path: "$.data.0", json: JSON });
+
+    if (data.length === 0) {
+      await session.send(session.text(".no-img-for-tag", [tags.join(' & ')]));
+    } else {
+      const aiTypeArr = (0, import_jsonpath_plus.JSONPath)({ path: "$.data.0.aiType", json: JSON });
+      const aiType = (aiTypeArr && aiTypeArr.length > 0) ? aiTypeArr[0] : 0;
+      
+      // 二次检测机制 1：排除AI (-e) 但 API 返回了 AI 图
+      if (options.exai && aiType > 0) {
+          if (cfg.outputLogs) logger.info("API 返回了 AI 图片，已被客户端拦截。");
+          return session.text(".ai-filter-blocked"); // 此时并未扣费，提示已退回
+      }
+
+      // 二次检测机制 2：搜索AI (-a) 但 API 返回了 非AI 图
+      if (options.ai && aiType === 0) {
+          if (cfg.outputLogs) logger.info("API 返回了非 AI 图片（用户仅请求AI），已被客户端拦截。");
+          return session.text(".ai-only-blocked"); // 此时并未扣费，提示已退回
+      }
+
+      const imageUrl = (0, import_jsonpath_plus.JSONPath)({ path: "$.data.0.urls.regular", json: JSON })[0];
+      const isValid = await isValidImageUrl(ctx, imageUrl);
+      await ctx.database.set("p_setu", { channelid: CHANNELID }, { src: USERID });
+
+      let info = `作品名：${await (0, import_jsonpath_plus.JSONPath)({ path: "$.data.0.title", json: JSON })}\n`;
+      if (cfg.enableTags) info += `标签：${await (0, import_jsonpath_plus.JSONPath)({ path: "$.data.0.tags", json: JSON })}\n`;
+      info += `作者：${await (0, import_jsonpath_plus.JSONPath)({ path: "$.data.0.author", json: JSON })}\n`;
+      info += `UID：${await (0, import_jsonpath_plus.JSONPath)({ path: "$.data.0.uid", json: JSON })}\n`;
+      info += `r18：${await (0, import_jsonpath_plus.JSONPath)({ path: "$.data.0.r18", json: JSON })}\n`;
+      info += `PID：${await (0, import_jsonpath_plus.JSONPath)({ path: "$.data.0.pid", json: JSON })}\n`;
+
+      const isAI = aiType > 0 ? "是" : "否";
+      info += `AI作品：${isAI}\n`;
+      
+      await session.send(info);
+
+      if (isValid) {
+        if (cfg.outputLogs) logger.success("图片已成功获取");
+      } else {
+        if (cfg.outputLogs) logger.info("图片链接无效");
+        return session.text(".img-not-valid"); // 此时并未扣费，提示已退回
+      }
+
+      // 注意：真正的扣费逻辑在这里！
+      // 只有上面所有的 if/else 都通过了，没有 return 掉，才会执行下面的扣钱。
+      await ctx.database.set("p_setu", { channelid: CHANNELID }, { stage: "ing" });
+      const rest = usersdata[0]?.p - cfg.price;
+      await ctx.database.set("p_system", { userid: USERID }, { p: rest });
+
+      const imageBuffer = await ctx.http.get(imageUrl, { responseType: "arraybuffer" });
+      const getRandomColorValue = __name(() => Math.floor(Math.random() * 256), "getRandomColorValue");
+      
+      const imageWithBorder = await (0, import_sharp.default)(imageBuffer).extend({
+        top: 1, bottom: 1, left: 1, right: 1,
+        background: { r: getRandomColorValue(), g: getRandomColorValue(), b: getRandomColorValue(), alpha: 1 }
+      }).toBuffer();
+
+      const imageBase64 = imageWithBorder.toString("base64");
+      const image = `data:image/png;base64,${imageBase64}`;
+
+      await session.sendQueued([(0, import_koishi.h)("at", { id: USERID }), session.text(".pay-price", [cfg.price, rest]), (0, import_koishi.h)("img", { src: image })].join(""));
+      
+      if (cfg.outputLogs) logger.success("图片发送成功");
+      await ctx.database.set("p_setu", { channelid: CHANNELID }, { stage: "over" });
+    }
+  });
+
+  ctx.command("p/p-return [target]").alias("退款", "姐姐，图没啦！").action(async ({ session }, target) => {
+    const USERID = session.userId;
+    const CHANNELID = session.channelId;
+    let targetid = (await ctx.database.get("p_setu", { channelid: CHANNELID }))[0]?.src;
+    
+    if (target != null) {
+      const ats = session.elements.filter((element) => element.type == "at");
+      const match = /\b([1-9]\d{6,})\b/.exec(String(target));
+      if (ats.length) {
+        targetid = String(ats.map((element) => element.attrs.id));
+      } else if (match) {
+        targetid = match[1];
+      } else {
+        return session.text(".no-id");
+      }
+    }
+
+    if (cfg.outputLogs) logger.success(targetid + "申请退款");
+    const targetdata = await ctx.database.get("p_system", { userid: targetid });
+
+    if (cfg.adminUsers.includes(USERID)) {
+      await ctx.database.set("p_system", { userid: targetid }, { p: (targetdata[0]?.p || 0) + cfg.price });
+      if (cfg.outputLogs) logger.success(targetid + "退款成功");
+      return session.text(".return-p", [cfg.price, targetid, (targetdata[0]?.p || 0) + cfg.price]);
+    } else {
+      const usersdata = await ctx.database.get("p_system", { userid: USERID });
+      if (cfg.outputLogs) logger.success(targetid + "退款惩罚");
+      if (usersdata[0]?.p >= cfg.punishment) {
+        await ctx.database.set("p_system", { userid: USERID }, { p: usersdata[0]?.p - cfg.punishment });
+        return session.text(".punishment1", [USERID, cfg.punishment]);
+      } else {
+        await ctx.database.set("p_system", { userid: USERID }, { p: 0 });
+        return session.text(".punishment2", [USERID]);
       }
     }
   });
 }
+__name(apply, "apply");
+
+0 && (module.exports = { Config, apply, inject, name, usage });
