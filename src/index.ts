@@ -55,11 +55,17 @@ var require_zh_CN = __commonJS({
             "r18-error": "哎呀，出现了奇怪的错误",
             "r18-no-assignment": "杂鱼，你不配命令我哦",
             "no-img-for-tag": "没有你要的标签 [{0}] 呢，可能是xp太怪了吧...",
-            "img-not-valid": "哎呀，找不到这张图了...",
-            "ai-filter-blocked": "哎呀，带这些标签都是AI图呢...请带时间截图私聊找Bot主人退款哦~", // 新增的提示语
+            "img-not-valid": "哎呀，找不到这张图了...P点已自动退回~", 
+            "ai-filter-blocked": "哎呀，带这些标签都是AI图呢...P点已自动退回~", 
+            "ai-only-blocked": "你就这么喜欢AI作品嘛！找不到的说...P点已自动退回~", 
             "pay-price": "已扣除{0}p点！现在君还有{1}p点！"
           },
-          options: { r18: "t开启，f关闭，m混合", exai: "排除AI作品", uid: "指定作者UID" }
+          options: { 
+            r18: "t开启，f关闭，m混合", 
+            exai: "排除AI作品 (excludeAI=true)", 
+            ai: "搜索AI作品 (excludeAI=false)",
+            uid: "指定作者UID" 
+          }
         },
         "p-return": {
           description: "退款",
@@ -96,9 +102,12 @@ var usage = `
 
     支持多个标签，请使用空格分隔。例如：\`涩图 猫耳 女仆\`
     参数：
-    -e, --exai   排除AI作品 (默认允许AI，加此参数则排除)
+    -e, --exai   排除AI作品 (excludeAI=true)
+    -a, --ai     搜索AI作品 (excludeAI=false)
     -u, --uid    指定画师UID
     -r           指定R18模式 (t/f/m)
+
+    *不加 -e 或 -a 时，默认同时搜索AI和非AI作品*
 
 - **指令：p-return [target]**
 
@@ -160,7 +169,14 @@ async function apply(ctx, cfg) {
   const logger = ctx.logger("p-setu");
   ctx.i18n.define("zh-CN", require_zh_CN());
 
-  ctx.command("p/p-setu [...tags]").alias("涩图", "色图").option("r18", "-r <mode:string>").alias("setu").option("exai", "-e").option("uid", "-u <uid:string>").action(async ({ session, options }, ...tags) => {
+  ctx.command("p/p-setu [...tags]")
+    .alias("涩图", "色图")
+    .option("r18", "-r <mode:string>")
+    .alias("setu")
+    .option("exai", "-e") // 排除AI
+    .option("ai", "-a")   // 允许AI (excludeAI=false)
+    .option("uid", "-u <uid:string>")
+    .action(async ({ session, options }, ...tags) => {
     const USERID = session.userId;
     const CHANNELID = session.channelId;
     const notExists = await isTargetIdExists(ctx, USERID);
@@ -212,9 +228,14 @@ async function apply(ctx, cfg) {
       }
     }
 
-    // 正向逻辑：有 -e 则排除
-    const isExcludeAI = !!options.exai; 
-    let url = "https://api.lolicon.app/setu/v2?size=regular&r18=" + r18_config + "&excludeAI=" + isExcludeAI;
+    // AI 参数控制逻辑
+    let url = "https://api.lolicon.app/setu/v2?size=regular&r18=" + r18_config;
+
+    if (options.exai) {
+        url += "&excludeAI=true";
+    } else if (options.ai) {
+        url += "&excludeAI=false";
+    }
     
     if (tags.length > 0) {
       const tagQuery = tags.map(t => `tag=${encodeURIComponent(t)}`).join('&');
@@ -233,15 +254,19 @@ async function apply(ctx, cfg) {
     if (data.length === 0) {
       await session.send(session.text(".no-img-for-tag", [tags.join(' & ')]));
     } else {
-      // 提取 AI 类型数据 (0为非AI，>0为AI)
       const aiTypeArr = (0, import_jsonpath_plus.JSONPath)({ path: "$.data.0.aiType", json: JSON });
       const aiType = (aiTypeArr && aiTypeArr.length > 0) ? aiTypeArr[0] : 0;
       
-      // 二次检测机制：如果排除AI但API仍然返回了AI图
-      if (isExcludeAI && aiType > 0) {
+      // 二次检测机制 1：排除AI (-e) 但 API 返回了 AI 图
+      if (options.exai && aiType > 0) {
           if (cfg.outputLogs) logger.info("API 返回了 AI 图片，已被客户端拦截。");
-          // 这里返回新的专用提示语
-          return session.text(".ai-filter-blocked"); 
+          return session.text(".ai-filter-blocked"); // 此时并未扣费，提示已退回
+      }
+
+      // 二次检测机制 2：搜索AI (-a) 但 API 返回了 非AI 图
+      if (options.ai && aiType === 0) {
+          if (cfg.outputLogs) logger.info("API 返回了非 AI 图片（用户仅请求AI），已被客户端拦截。");
+          return session.text(".ai-only-blocked"); // 此时并未扣费，提示已退回
       }
 
       const imageUrl = (0, import_jsonpath_plus.JSONPath)({ path: "$.data.0.urls.regular", json: JSON })[0];
@@ -264,9 +289,11 @@ async function apply(ctx, cfg) {
         if (cfg.outputLogs) logger.success("图片已成功获取");
       } else {
         if (cfg.outputLogs) logger.info("图片链接无效");
-        return session.text(".img-not-valid");
+        return session.text(".img-not-valid"); // 此时并未扣费，提示已退回
       }
 
+      // 注意：真正的扣费逻辑在这里！
+      // 只有上面所有的 if/else 都通过了，没有 return 掉，才会执行下面的扣钱。
       await ctx.database.set("p_setu", { channelid: CHANNELID }, { stage: "ing" });
       const rest = usersdata[0]?.p - cfg.price;
       await ctx.database.set("p_system", { userid: USERID }, { p: rest });
