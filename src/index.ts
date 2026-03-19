@@ -1,15 +1,15 @@
-import { Context, Schema, h } from 'koishi'
-import sharp from 'sharp'
-import fs from 'fs/promises'
-import { existsSync, mkdirSync } from 'fs'
-import path from 'path'
-import { pathToFileURL } from 'url'
+const { Schema, h } = require('koishi');
+const sharp = require('sharp');
+const fs = require('fs/promises');
+const { existsSync, mkdirSync } = require('fs');
+const path = require('path');
+const { pathToFileURL } = require('url');
 
-export const name = 'p-setu'
+exports.name = 'p-setu';
 
-export const inject = ['database', 'puppeteer']
+exports.inject = ['database', 'puppeteer'];
 
-export const usage = `
+exports.usage = `
 - **指令：p-setu [tag...]**
 
     别名：涩图，色图
@@ -33,23 +33,9 @@ export const usage = `
     别名：退款
     
     给上一个或指定的用户退款（例如图没发出来）需要管理员权限
-`
+`;
 
-export interface Config {
-  adminUsers: string[]
-  enableTags: boolean
-  blockingWord: string[]
-  price: number
-  punishment: number
-  outputLogs: boolean
-  r18Whitelist: string[]
-  mixWhitelist: string[]
-  allowPrivateR18: boolean
-  deleteCache: boolean
-  deleteCacheDelay: number
-}
-
-export const Config: Schema<Config> = Schema.object({
+exports.Config = Schema.object({
   adminUsers: Schema.array(Schema.string()).description('管理员用户ID列表'),
   enableTags: Schema.boolean().default(true).description('是否在发送图片时附带详细Tag信息'),
   blockingWord: Schema.array(Schema.string()).description('屏蔽词列表（包含这些词的请求将被拒绝）'),
@@ -61,36 +47,14 @@ export const Config: Schema<Config> = Schema.object({
   allowPrivateR18: Schema.boolean().default(false).description('是否允许在私聊中搜索R18图片（开启后私聊等同于混合白名单）'),
   deleteCache: Schema.boolean().default(true).description('是否在发送后自动删除缓存图片（缓存图片仅用作留存，不复用）'),
   deleteCacheDelay: Schema.number().default(60).description('发送后延迟多少秒删除缓存图片')
-})
+});
 
-declare module 'koishi' {
-  interface Tables {
-    p_system: PSystem
-    p_setu: PSetu
-  }
-}
-
-export interface PSystem {
-  id: number
-  userid: string
-  p: number
-}
-
-export interface PSetu {
-  id: number
-  channelid: string
-  r18: number
-  src: string
-  stage: string
-  same_user_time: number
-}
-
-export async function apply(ctx: Context, cfg: Config) {
+exports.apply = async function apply(ctx, cfg) {
   ctx.model.extend('p_system', {
     id: 'unsigned',
     userid: 'string',
     p: 'integer'
-  }, { autoInc: true })
+  }, { autoInc: true });
 
   ctx.model.extend('p_setu', {
     id: 'unsigned',
@@ -99,16 +63,16 @@ export async function apply(ctx: Context, cfg: Config) {
     src: 'string',
     stage: 'string',
     same_user_time: 'integer'
-  }, { autoInc: true })
+  }, { autoInc: true });
 
-  const logger = ctx.logger('p-setu')
+  const logger = ctx.logger('p-setu');
 
-  const tempDir = path.join(__dirname, 'temp')
+  const tempDir = path.join(__dirname, 'temp');
   if (!existsSync(tempDir)) {
     try {
-      mkdirSync(tempDir, { recursive: true })
+      mkdirSync(tempDir, { recursive: true });
     } catch (e) {
-      logger.warn('无法创建缓存目录，请检查文件夹权限')
+      logger.warn('无法创建缓存目录，请检查文件夹权限');
     }
   }
 
@@ -151,18 +115,18 @@ export async function apply(ctx: Context, cfg: Config) {
         }
       }
     }
-  })
+  });
 
-  async function isValidImageUrl(url: string) {
+  async function isValidImageUrl(url) {
     try {
       if (typeof fetch === "function") {
-        const response = await fetch(url, { method: "HEAD" })
-        if (response && typeof response.ok === "boolean") return response.ok
+        const response = await fetch(url, { method: "HEAD" });
+        if (response && typeof response.ok === "boolean") return response.ok;
       }
-      await ctx.http.get(url, { responseType: "arraybuffer", headers: { Range: "bytes=0-0" } })
-      return true
+      await ctx.http.get(url, { responseType: "arraybuffer", headers: { Range: "bytes=0-0" } });
+      return true;
     } catch (error) {
-      return false
+      return false;
     }
   }
 
@@ -173,112 +137,111 @@ export async function apply(ctx: Context, cfg: Config) {
     .option('ai', '-a')
     .option('uid', '-u <uid:string>')
     .action(async ({ session, options }, ...tags) => {
-      const USERID = session.userId
-      const CHANNELID = session.channelId
+      const USERID = session.userId;
+      const CHANNELID = session.channelId;
 
-      const usersdata = await ctx.database.get('p_system', { userid: USERID })
-      if (usersdata.length === 0) return session.text('.account-notExists')
+      const usersdata = await ctx.database.get('p_system', { userid: USERID });
+      if (usersdata.length === 0) return session.text('.account-notExists');
 
-      const saving = usersdata[0].p
+      const saving = usersdata[0].p;
       if (saving < cfg.price) {
-        await session.sendQueued(h('at', { id: USERID }) + session.text('.no-enough-p1'))
-        await session.sendQueued(session.text('.no-enough-p2'))
-        return null
+        await session.sendQueued(h('at', { id: USERID }) + session.text('.no-enough-p1'));
+        await session.sendQueued(session.text('.no-enough-p2'));
+        return null;
       }
 
-      let targetInfo = await ctx.database.get('p_setu', { channelid: CHANNELID })
+      let targetInfo = await ctx.database.get('p_setu', { channelid: CHANNELID });
       if (targetInfo.length === 0) {
-        await ctx.database.create('p_setu', { channelid: CHANNELID, stage: 'over', r18: 0, src: '', same_user_time: 0 })
-        if (cfg.outputLogs) logger.success(`${CHANNELID} 初始化完成`)
-        targetInfo = [{ id: 0, channelid: CHANNELID, stage: 'over', r18: 0, src: '', same_user_time: 0 }]
+        await ctx.database.create('p_setu', { channelid: CHANNELID, stage: 'over', r18: 0, src: '', same_user_time: 0 });
+        if (cfg.outputLogs) logger.success(`${CHANNELID} 初始化完成`);
+        targetInfo = [{ id: 0, channelid: CHANNELID, stage: 'over', r18: 0, src: '', same_user_time: 0 }];
       }
 
-      const channelSetu = targetInfo[0]
+      const channelSetu = targetInfo[0];
 
       if (channelSetu.stage === 'ing') {
-        await session.send(String(h('at', { id: USERID })) + session.text('.please-wait'))
-        await ctx.sleep(60000)
-        await ctx.database.set('p_setu', { channelid: CHANNELID }, { stage: 'over' })
-        return null
+        await session.send(String(h('at', { id: USERID })) + session.text('.please-wait'));
+        await ctx.sleep(60000);
+        await ctx.database.set('p_setu', { channelid: CHANNELID }, { stage: 'over' });
+        return null;
       }
 
       if (tags.length > 0) {
-        const blocked = tags.find(t => cfg.blockingWord.includes(t))
-        if (blocked) return session.text('.blocked-tag', [blocked])
+        const blocked = tags.find(t => cfg.blockingWord.includes(t));
+        if (blocked) return session.text('.blocked-tag', [blocked]);
       }
 
-      const isPrivate = session.isDirect || !session.guildId
-      let r18_config = 0
+      const isPrivate = session.isDirect || !session.guildId;
+      let r18_config = 0;
 
       if (isPrivate) {
         if (cfg.allowPrivateR18) {
-          r18_config = 2 
+          r18_config = 2;
         }
       } else {
         if (cfg.r18Whitelist.includes(CHANNELID)) {
-          r18_config = 1
+          r18_config = 1;
         } else if (cfg.mixWhitelist.includes(CHANNELID)) {
-          r18_config = 2
+          r18_config = 2;
         }
       }
 
       if (options.r18) {
         if (r18_config === 0) {
-          return isPrivate ? session.text('.r18-disabled-private') : session.text('.r18-disabled')
+          return isPrivate ? session.text('.r18-disabled-private') : session.text('.r18-disabled');
         }
-        r18_config = 1
+        r18_config = 1;
       }
 
-      let url = `https://api.lolicon.app/setu/v2?size=regular&num=5&r18=${r18_config}`
+      let url = `https://api.lolicon.app/setu/v2?size=regular&num=5&r18=${r18_config}`;
 
-      if (options.exai) url += '&excludeAI=true'
-      else if (options.ai) url += '&excludeAI=false'
+      if (options.exai) url += '&excludeAI=true';
+      else if (options.ai) url += '&excludeAI=false';
 
       if (tags.length > 0) {
-        const tagQuery = tags.map(t => `tag=${encodeURIComponent(t)}`).join('&')
-        url += `&${tagQuery}`
+        const tagQuery = tags.map(t => `tag=${encodeURIComponent(t)}`).join('&');
+        url += `&${tagQuery}`;
       }
 
       if (options.uid) {
-        url += `&uid=${encodeURIComponent(options.uid)}`
+        url += `&uid=${encodeURIComponent(options.uid)}`;
       }
 
-      if (cfg.outputLogs) logger.info(`请求 API: ${url}`)
+      if (cfg.outputLogs) logger.info(`请求 API: ${url}`);
 
       try {
-        const JSON_RES = await ctx.http.get(url, { responseType: 'json' })
+        const JSON_RES = await ctx.http.get(url, { responseType: 'json' });
 
         if (!JSON_RES.data || JSON_RES.data.length === 0) {
-          return session.text('.no-img-for-tag', [tags.join(' & ')])
+          return session.text('.no-img-for-tag', [tags.join(' & ')]);
         }
 
         const validImages = JSON_RES.data.filter(img => {
-          const aiType = img.aiType || 0
-          if (options.exai && aiType > 0) return false
-          if (options.ai && aiType === 0) return false
-          return true
-        })
+          const aiType = img.aiType || 0;
+          if (options.exai && aiType > 0) return false;
+          if (options.ai && aiType === 0) return false;
+          return true;
+        });
 
         if (validImages.length === 0) {
           if (options.exai) {
-            if (cfg.outputLogs) logger.info('API 返回了 AI 图片，已被客户端拦截。')
-            return session.text('.ai-filter-blocked')
+            if (cfg.outputLogs) logger.info('API 返回了 AI 图片，已被客户端拦截。');
+            return session.text('.ai-filter-blocked');
           }
           if (options.ai) {
-            if (cfg.outputLogs) logger.info('API 返回了非 AI 图片（用户仅请求AI），已被客户端拦截。')
-            return session.text('.ai-only-blocked')
+            if (cfg.outputLogs) logger.info('API 返回了非 AI 图片（用户仅请求AI），已被客户端拦截。');
+            return session.text('.ai-only-blocked');
           }
-          return session.text('.no-img-for-tag', [tags.join(' & ')])
+          return session.text('.no-img-for-tag', [tags.join(' & ')]);
         }
 
-        const selectedImage = validImages[Math.floor(Math.random() * validImages.length)]
-        
-        const imageUrl = selectedImage.urls.regular
-        const isValid = await isValidImageUrl(imageUrl)
+        const selectedImage = validImages[Math.floor(Math.random() * validImages.length)];
+        const imageUrl = selectedImage.urls.regular;
+        const isValid = await isValidImageUrl(imageUrl);
 
-        await ctx.database.set('p_setu', { channelid: CHANNELID }, { src: USERID })
+        await ctx.database.set('p_setu', { channelid: CHANNELID }, { src: USERID });
 
-        const isAI = selectedImage.aiType > 0 ? '是' : '否'
+        const isAI = selectedImage.aiType > 0 ? '是' : '否';
         
         const infoParams = {
           title: selectedImage.title,
@@ -288,36 +251,36 @@ export async function apply(ctx: Context, cfg: Config) {
           r18: selectedImage.r18,
           pid: selectedImage.pid,
           isAI: isAI
-        }
+        };
 
         const info = cfg.enableTags
           ? session.text('.img-info', infoParams)
-          : session.text('.img-info-no-tags', infoParams)
+          : session.text('.img-info-no-tags', infoParams);
 
-        await session.send(info)
+        await session.send(info);
 
         if (isValid) {
-          if (cfg.outputLogs) logger.success('图片已成功获取')
+          if (cfg.outputLogs) logger.success('图片已成功获取');
         } else {
-          if (cfg.outputLogs) logger.info('图片链接无效')
-          return session.text('.img-not-valid')
+          if (cfg.outputLogs) logger.info('图片链接无效');
+          return session.text('.img-not-valid');
         }
 
-        await ctx.database.set('p_setu', { channelid: CHANNELID }, { stage: 'ing' })
-        const rest = saving - cfg.price
-        await ctx.database.set('p_system', { userid: USERID }, { p: rest })
+        await ctx.database.set('p_setu', { channelid: CHANNELID }, { stage: 'ing' });
+        const rest = saving - cfg.price;
+        await ctx.database.set('p_system', { userid: USERID }, { p: rest });
 
-        const imageBuffer = await ctx.http.get(imageUrl, { responseType: 'arraybuffer' })
-        let finalImageBuffer: Buffer
+        const imageBuffer = await ctx.http.get(imageUrl, { responseType: 'arraybuffer' });
+        let finalImageBuffer;
 
         try {
-          const pngBase64 = await sharp(imageBuffer).png().toBuffer().then(b => b.toString('base64'))
-          const page = await ctx.puppeteer.page()
+          const pngBase64 = await sharp(imageBuffer).png().toBuffer().then(b => b.toString('base64'));
+          const page = await ctx.puppeteer.page();
           
           try {
-            const r = Math.floor(Math.random() * 256)
-            const g = Math.floor(Math.random() * 256)
-            const b = Math.floor(Math.random() * 256)
+            const r = Math.floor(Math.random() * 256);
+            const g = Math.floor(Math.random() * 256);
+            const b = Math.floor(Math.random() * 256);
 
             await page.setContent(`
               <html>
@@ -356,97 +319,97 @@ export async function apply(ctx: Context, cfg: Config) {
                   </script>
               </body>
               </html>
-            `)
+            `);
 
-            await page.waitForSelector('#done', { timeout: 15000 })
-            const body = await page.$('body')
-            finalImageBuffer = await body!.screenshot({ type: 'png', omitBackground: true }) as Buffer
-            if (cfg.outputLogs) logger.success("Puppeteer 像素级扰动渲染成功")
+            await page.waitForSelector('#done', { timeout: 15000 });
+            const body = await page.$('body');
+            finalImageBuffer = await body.screenshot({ type: 'png', omitBackground: true });
+            if (cfg.outputLogs) logger.success("Puppeteer 像素级扰动渲染成功");
 
           } finally {
-            await page.close()
+            await page.close();
           }
         } catch (puppeteerError) {
-          if (cfg.outputLogs) logger.warn(`Puppeteer 渲染失败，降级使用 sharp 处理: ${puppeteerError}`)
-          const getRandomColorValue = () => Math.floor(Math.random() * 256)
+          if (cfg.outputLogs) logger.warn(`Puppeteer 渲染失败，降级使用 sharp 处理: ${puppeteerError}`);
+          const getRandomColorValue = () => Math.floor(Math.random() * 256);
           finalImageBuffer = await sharp(imageBuffer).extend({
             top: 1, bottom: 1, left: 1, right: 1,
             background: { r: getRandomColorValue(), g: getRandomColorValue(), b: getRandomColorValue(), alpha: 1 }
-          }).png().toBuffer()
+          }).png().toBuffer();
         }
 
-        const fileName = `${Date.now()}_${Math.floor(Math.random() * 1000)}.png`
-        const filePath = path.join(tempDir, fileName)
+        const fileName = `${Date.now()}_${Math.floor(Math.random() * 1000)}.png`;
+        const filePath = path.join(tempDir, fileName);
         
-        await fs.writeFile(filePath, finalImageBuffer)
-        const fileUri = pathToFileURL(filePath).href
+        await fs.writeFile(filePath, finalImageBuffer);
+        const fileUri = pathToFileURL(filePath).href;
 
         await session.sendQueued([
           h('at', { id: USERID }),
           session.text('.pay-price', [cfg.price, rest]),
           h('img', { src: fileUri })
-        ].join(''))
+        ].join(''));
 
-        if (cfg.outputLogs) logger.success('图片发送成功')
+        if (cfg.outputLogs) logger.success('图片发送成功');
 
         if (cfg.deleteCache) {
           ctx.setTimeout(async () => {
             try {
-              await fs.unlink(filePath)
+              await fs.unlink(filePath);
             } catch (err) {
-              if (cfg.outputLogs) logger.warn(`删除临时文件失败: ${fileName}, 错误: ${err}`)
+              if (cfg.outputLogs) logger.warn(`删除临时文件失败: ${fileName}, 错误: ${err}`);
             }
-          }, cfg.deleteCacheDelay * 1000)
+          }, cfg.deleteCacheDelay * 1000);
         }
 
       } catch (err) {
-        logger.error(`处理或发送图片时出错: ${err}`)
-        await session.send(session.text('.send-error'))
+        logger.error(`处理或发送图片时出错: ${err}`);
+        await session.send(session.text('.send-error'));
       } finally {
-        await ctx.database.set('p_setu', { channelid: CHANNELID }, { stage: 'over' })
+        await ctx.database.set('p_setu', { channelid: CHANNELID }, { stage: 'over' });
       }
-    })
+    });
 
   ctx.command('p/p-return [target]')
     .alias('退款', '姐姐，图没啦！')
     .action(async ({ session }, target) => {
-      const USERID = session.userId
-      const CHANNELID = session.channelId
+      const USERID = session.userId;
+      const CHANNELID = session.channelId;
       
-      const channelData = await ctx.database.get('p_setu', { channelid: CHANNELID })
-      let targetid = channelData[0]?.src
+      const channelData = await ctx.database.get('p_setu', { channelid: CHANNELID });
+      let targetid = channelData[0]?.src;
 
       if (target != null) {
-        const ats = session.elements.filter((element) => element.type === 'at')
-        const match = /\b([1-9]\d{6,})\b/.exec(String(target))
+        const ats = session.elements.filter((element) => element.type === 'at');
+        const match = /\b([1-9]\d{6,})\b/.exec(String(target));
         if (ats.length) {
-          targetid = String(ats.map((element) => element.attrs.id))
+          targetid = String(ats.map((element) => element.attrs.id));
         } else if (match) {
-          targetid = match[1]
+          targetid = match[1];
         } else {
-          return session.text('.no-id')
+          return session.text('.no-id');
         }
       }
 
-      if (cfg.outputLogs) logger.success(`${targetid} 申请退款`)
-      const targetdata = await ctx.database.get('p_system', { userid: targetid })
+      if (cfg.outputLogs) logger.success(`${targetid} 申请退款`);
+      const targetdata = await ctx.database.get('p_system', { userid: targetid });
 
       if (cfg.adminUsers.includes(USERID)) {
-        const currentP = targetdata[0]?.p || 0
-        await ctx.database.set('p_system', { userid: targetid }, { p: currentP + cfg.price })
-        if (cfg.outputLogs) logger.success(`${targetid} 退款成功`)
-        return session.text('.return-p', [cfg.price, targetid, currentP + cfg.price])
+        const currentP = targetdata[0]?.p || 0;
+        await ctx.database.set('p_system', { userid: targetid }, { p: currentP + cfg.price });
+        if (cfg.outputLogs) logger.success(`${targetid} 退款成功`);
+        return session.text('.return-p', [cfg.price, targetid, currentP + cfg.price]);
       } else {
-        const usersdata = await ctx.database.get('p_system', { userid: USERID })
-        if (cfg.outputLogs) logger.success(`${targetid} 退款惩罚`)
-        const userP = usersdata[0]?.p || 0
+        const usersdata = await ctx.database.get('p_system', { userid: USERID });
+        if (cfg.outputLogs) logger.success(`${targetid} 退款惩罚`);
+        const userP = usersdata[0]?.p || 0;
         if (userP >= cfg.punishment) {
-          await ctx.database.set('p_system', { userid: USERID }, { p: userP - cfg.punishment })
-          return session.text('.punishment1', [USERID, cfg.punishment])
+          await ctx.database.set('p_system', { userid: USERID }, { p: userP - cfg.punishment });
+          return session.text('.punishment1', [USERID, cfg.punishment]);
         } else {
-          await ctx.database.set('p_system', { userid: USERID }, { p: 0 })
-          return session.text('.punishment2', [USERID])
+          await ctx.database.set('p_system', { userid: USERID }, { p: 0 });
+          return session.text('.punishment2', [USERID]);
         }
       }
-    })
-}
+    });
+};
