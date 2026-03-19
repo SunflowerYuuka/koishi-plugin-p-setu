@@ -44,6 +44,7 @@ export interface Config {
   outputLogs: boolean
   r18Whitelist: string[]
   mixWhitelist: string[]
+  allowPrivateR18: boolean
   deleteCache: boolean
   deleteCacheDelay: number
 }
@@ -57,7 +58,8 @@ export const Config: Schema<Config> = Schema.object({
   outputLogs: Schema.boolean().default(true).description('是否在控制台输出详细日志'),
   r18Whitelist: Schema.array(Schema.string()).default([]).description('R18模式白名单群聊ID'),
   mixWhitelist: Schema.array(Schema.string()).default([]).description('混合模式白名单群聊ID'),
-  deleteCache: Schema.boolean().default(true).description('是否在发送后自动删除本地缓存图片'),
+  allowPrivateR18: Schema.boolean().default(false).description('是否允许在私聊中搜索R18图片（开启后私聊等同于混合白名单）'),
+  deleteCache: Schema.boolean().default(true).description('是否在发送后自动删除缓存图片（缓存图片仅用作留存，不复用）'),
   deleteCacheDelay: Schema.number().default(60).description('发送后延迟多少秒删除缓存图片')
 })
 
@@ -121,6 +123,7 @@ export async function apply(ctx: Context, cfg: Config) {
           "please-wait": "稍等哦...上一个图片还没处理完",
           "blocked-tag": "不可以看包含 {0} 的涩图！",
           "r18-disabled": "当前群聊未开启R18权限，请联系管理员添加白名单。",
+          "r18-disabled-private": "当前私聊未开启R18权限，请联系管理员。",
           "no-img-for-tag": "没有你要的标签 [{0}] 呢，可能是xp太怪了吧...",
           "img-not-valid": "哎呀，找不到这张图了...P点已自动退回~",
           "ai-filter-blocked": "哎呀，带这些标签都是AI图呢...P点已自动退回~",
@@ -204,16 +207,24 @@ export async function apply(ctx: Context, cfg: Config) {
         if (blocked) return session.text('.blocked-tag', [blocked])
       }
 
+      const isPrivate = session.isDirect || !session.guildId
       let r18_config = 0
-      if (cfg.r18Whitelist.includes(CHANNELID)) {
-        r18_config = 1
-      } else if (cfg.mixWhitelist.includes(CHANNELID)) {
-        r18_config = 2
+
+      if (isPrivate) {
+        if (cfg.allowPrivateR18) {
+          r18_config = 2 
+        }
+      } else {
+        if (cfg.r18Whitelist.includes(CHANNELID)) {
+          r18_config = 1
+        } else if (cfg.mixWhitelist.includes(CHANNELID)) {
+          r18_config = 2
+        }
       }
 
       if (options.r18) {
         if (r18_config === 0) {
-          return session.text('.r18-disabled')
+          return isPrivate ? session.text('.r18-disabled-private') : session.text('.r18-disabled')
         }
         r18_config = 1
       }
@@ -261,12 +272,14 @@ export async function apply(ctx: Context, cfg: Config) {
         }
 
         const selectedImage = validImages[Math.floor(Math.random() * validImages.length)]
+        
         const imageUrl = selectedImage.urls.regular
         const isValid = await isValidImageUrl(imageUrl)
 
         await ctx.database.set('p_setu', { channelid: CHANNELID }, { src: USERID })
 
         const isAI = selectedImage.aiType > 0 ? '是' : '否'
+        
         const infoParams = {
           title: selectedImage.title,
           tags: selectedImage.tags ? selectedImage.tags.join(', ') : '',
